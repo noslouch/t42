@@ -36,10 +36,11 @@ cartodbClient.on('connect', function() {
                     var $ = cheerio.load(body),
                         address = $('#page-header').find('[itemprop=alternativeHeadline]').text().split(';')
 
-                    // cartodbClient.query("insert into t42 (address, state) values('{address}', 'NY')", {address: address[0]}, function(err, data) {
-                    //     if (err) { console.log(err) } else { console.log(data) }
-                    // })
-                    cartodbClient.query("update t42 set name = '{title}', url = '{href}' where address = '{address}'", {title: title, href: href, address: address[0]}, function(err, data) {
+                    cartodbClient.query("insert into t42 (name, url, address, state) values('{title}', '{href}', '{address}', 'NY')", {
+                        title: title,
+                        href: href,
+                        address: address[0]
+                    }, function(err, data) {
                          if (err) { console.log(err) } else { console.log(data) }
                     })
                 })
