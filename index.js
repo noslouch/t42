@@ -1,3 +1,4 @@
+process.setMaxListeners(0)
 var request = require('request-promise'),
     url = require('url'),
     CartoDB = require('cartodb'),
@@ -5,39 +6,38 @@ var request = require('request-promise'),
     googleJSON = require('./lib/google'),
     Scraper = require('./lib/newyorker'),
     baseUrl = 'http://www.newyorker.com/magazine/tables-for-two',
-    cartodbClient = new CartoDB({user: secrets.USER, api_key: secrets.API_KEY}),
+    cartodbClient = new CartoDB({user: secrets.USER, api_key: secrets.CARTODB_KEY}),
     requestUrl
 
-function geoCb(b, ops) {
-  console.log(body.results)
-    var body = JSON.parse(b),
-        results = body.results[0],
-        coords = results ? results[0].geometry.location : '',
-        coordsString = coords ? coords.lng + ',' + coords.lat : ''
+cartodbClient.connect()
 
-    this.dataSet.push({
-        title: ops.title,
-        url: ops.href,
-        address: ops.address,
-        coords: coordsString
-    })
-}
+function geoCb(body, ops) {
+  if (body.status !== 'OK') {
+    console.log(body)
+    return
+  }
+  var results = body.results[0],
+      coords = results.geometry.location,
+      coordsString = coords.lng + ' ' + coords.lat,
+      address = results.formatted_address,
+      phoneMatch = ops.address.match(/\((.*)\)/),
+      phone = phoneMatch ? phoneMatch[1] : ''
 
-function sendToCarto() {
-  var data = scraper.dataSet
-    console.log(data)
+  var data = {
+      phone: phone,
+      title: ops.title,
+      url: ops.href,
+      address: address,
+      coords: coordsString,
+      blurb: ops.blurb,
+      author: ops.author,
+      publishDate: ops.publishDate
+  }
 
-  cartodbClient.on('connect', function() {
-    data.forEach(function(d) {
-      cartodbClient.query("insert into t42 (address, state) values('{address}', 'NY')", {address: address[0]}, function(err, data) {
-          if (err) { console.log(err) } else { console.log(data) }
-      })
-      cartodbClient.query("update t42 set name = '{title}', url = '{href}' where address = '{address}'", {title: title, href: href, address: address[0]}, function(err, data) {
-         //if (err) { console.log(err) } else { console.log(data) }
-      })
-    })
-})
-//cartodbClient.connect()
+  cartodbClient.query("insert into t42 (the_geom, name, address, state, url, blurb, author, publish_date, phone) values(ST_GeomFromText('POINT({coords})', 4326), '{title}', '{address}', 'NY', '{url}', '{blurb}', '{author}', '{publishDate}', '{phone}')", data, function(err, data) {
+      if (err) { console.log(err) } else { console.log(data) }
+  })
+
 }
 
 var scraper = new Scraper({
@@ -45,15 +45,18 @@ var scraper = new Scraper({
     geoCb: geoCb
 })
 
-for (var i = 1; i <= 2; i++) {
+function doScrape(url) {
+  console.log('requesting', url)
+  request(url).promise().bind(scraper)
+    .then(scraper.scrape)
+}
+
+for (var i = 1; i <= 65; i++) {
     if (i === 1) {
         requestUrl = baseUrl.slice()
     } else {
         requestUrl = baseUrl.slice() + '/page/' + i
     }
 
-    request(requestUrl).promise().bind(scraper)
-      .then(scraper.scrape)
-      .finally(sendToCarto)
-
+    setTimeout(doScrape.bind(this, requestUrl), i * 5000)
 }
